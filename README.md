@@ -31,6 +31,16 @@ Important options:
 
 Hardware UART is the default bridge interface. On ESP32-C3/S3/C6-class targets, **Use USB Serial/JTAG for bridge traffic** can use the native `/dev/ttyACM*` CDC ACM port instead. If you use that port for payload data, monitor/debug logs share the same stream and can interfere with binary protocols.
 
+## NMEA-0183 GPS/AIS
+
+Recommended options:
+
+- Enable **Flush UART packets on line feed** (`CONFIG_BRIDGE_PACKET_SPLIT_ON_LF=y`) so NMEA sentences ending in `\r\n` are forwarded as complete ESP-NOW packets.
+- Keep **UART to ESP-NOW transmit queue depth** (`CONFIG_BRIDGE_TX_QUEUE_DEPTH`) at the default `16` or increase it if AIS bursts and RF retries cause TX queue drops.
+- Increase **ESP-NOW RX byte queue size** (`CONFIG_BRIDGE_RX_QUEUE_SIZE`) if reverse-direction bursts matter.
+- Disable debug telemetry logs on payload interfaces.
+- Prefer hardware UART over USB Serial/JTAG CDC for NMEA payloads, because USB CDC may share the same stream with logs/monitor traffic.
+
 ## Optional ESP-NOW encryption
 
 ESP-NOW encryption is disabled by default. Enable **ESP-NOW Serial Bridge → Enable ESP-NOW encryption** in menuconfig on both boards.
