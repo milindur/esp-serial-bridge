@@ -56,6 +56,15 @@ config BRIDGE_PACKET_SIZE
     range 1 250
     default 250
 
+config BRIDGE_PACKET_SPLIT_ON_LF
+    bool "Flush UART packets on line feed"
+    default n
+    help
+        Send a packet immediately when a '\n' byte is read from the UART.
+        This is useful for line-oriented text protocols such as NMEA-0183.
+        Leave disabled for binary protocols or protocols where LF has no
+        framing meaning. The inter-byte timeout remains active as a fallback.
+
 config BRIDGE_TX_QUEUE_DEPTH
     int "UART to ESP-NOW transmit queue depth"
     range 1 128

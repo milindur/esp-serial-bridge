@@ -391,7 +391,11 @@ static void uart_packetizer_task(void *arg)
         }
 
         const bool full = packet.len == sizeof(packet.data);
+#if CONFIG_BRIDGE_PACKET_SPLIT_ON_LF
+        const bool line_complete = read_len == 1 && byte == '\n';
+#else
         const bool line_complete = false;
+#endif
         const bool timed_out = packet.len > 0 && now_us() >= send_timeout_us;
         const bool should_flush = packet.len > 0 && (full || line_complete || timed_out);
         if (should_flush) {
