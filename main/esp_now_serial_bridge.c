@@ -187,7 +187,9 @@ static void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status
 
 static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
-    (void)info;
+    if (info == NULL || memcmp(info->src_addr, s_peer_addr, ESP_NOW_ETH_ALEN) != 0) {
+        return;
+    }
     if (data == NULL || len <= 0) {
         return;
     }
