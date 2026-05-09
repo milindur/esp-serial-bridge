@@ -214,7 +214,8 @@ static esp_err_t init_led(void)
     set_led(false);
     s_led_queue = xQueueCreate(8, sizeof(uint8_t));
     ESP_RETURN_ON_FALSE(s_led_queue != NULL, ESP_ERR_NO_MEM, TAG, "create LED queue");
-    xTaskCreate(led_task, "bridge_led", 2048, NULL, 4, NULL);
+    BaseType_t ok = xTaskCreate(led_task, "bridge_led", 2048, NULL, 4, NULL);
+    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create LED task");
     return ESP_OK;
 }
 
@@ -428,6 +429,22 @@ static void telemetry_task(void *arg)
 }
 #endif
 
+static esp_err_t start_bridge_tasks(void)
+{
+    BaseType_t ok = xTaskCreate(uart_to_espnow_task, "uart_to_espnow", 4096, NULL, 10, NULL);
+    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create UART-to-ESP-NOW task");
+
+    ok = xTaskCreate(espnow_to_uart_task, "espnow_to_uart", 4096, NULL, 9, NULL);
+    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create ESP-NOW-to-UART task");
+
+#if CONFIG_BRIDGE_DEBUG
+    ok = xTaskCreate(telemetry_task, "bridge_telemetry", 4096, NULL, 3, NULL);
+    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create telemetry task");
+#endif
+
+    return ESP_OK;
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(parse_mac(CONFIG_BRIDGE_PEER_MAC, s_peer_addr));
@@ -465,9 +482,5 @@ void app_main(void)
              CONFIG_BRIDGE_UART_NUM, CONFIG_BRIDGE_BAUD_RATE, CONFIG_BRIDGE_TX_PIN, CONFIG_BRIDGE_RX_PIN, CONFIG_BRIDGE_WIFI_CHANNEL);
 #endif
 
-    xTaskCreate(uart_to_espnow_task, "uart_to_espnow", 4096, NULL, 10, NULL);
-    xTaskCreate(espnow_to_uart_task, "espnow_to_uart", 4096, NULL, 9, NULL);
-#if CONFIG_BRIDGE_DEBUG
-    xTaskCreate(telemetry_task, "bridge_telemetry", 4096, NULL, 3, NULL);
-#endif
+    ESP_ERROR_CHECK(start_bridge_tasks());
 }
