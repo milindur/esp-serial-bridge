@@ -27,6 +27,7 @@ Important options:
 - **Bridge UART baud rate**: default `115200`.
 - **UART number / TX / RX pins**: defaults match the sketch (`UART1`, TX GPIO `1`, RX GPIO `3`). These pins may be shared with USB-UART/boot logs on some boards; change them if needed.
 - **Activity LED**: GPIO, polarity, pulse length, and blink-on-send/recv behavior. By default it blinks on receive and successful send.
+- **WS2812/NeoPixel activity LED**: optional `led_strip` support for boards with addressable RGB LEDs. Configure GPIO, RGB pulse color, and wire color order (`GRB` for most WS2812 LEDs, `RGB` for boards whose green pulse appears red).
 - **Debug telemetry logs**: optional ESP-IDF log output with packet/drop/send counters.
 
 Hardware UART is the default bridge interface. On ESP32-C3/S3/C6-class targets, **Use USB Serial/JTAG for bridge traffic** can use the native `/dev/ttyACM*` CDC ACM port instead. If you use that port for payload data, monitor/debug logs share the same stream and can interfere with binary protocols.

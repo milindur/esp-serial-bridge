@@ -25,6 +25,9 @@
 #if CONFIG_BRIDGE_USE_USB_CDC
 #include "driver/usb_serial_jtag.h"
 #endif
+#if CONFIG_BRIDGE_LED_NEOPIXEL
+#include "led_strip.h"
+#endif
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
@@ -49,6 +52,9 @@ static uint8_t s_peer_addr[ESP_NOW_ETH_ALEN];
 static StreamBufferHandle_t s_rx_stream;
 static QueueHandle_t s_tx_queue;
 static QueueHandle_t s_led_queue;
+#if CONFIG_BRIDGE_LED_NEOPIXEL
+static led_strip_handle_t s_led_strip;
+#endif
 static atomic_int s_send_result = SEND_RESULT_NONE;
 
 static atomic_uint s_tx_dropped_packets = 0;
@@ -127,7 +133,20 @@ static esp_err_t parse_hex_key(const char *text, uint8_t out[ESP_NOW_KEY_LEN])
 
 static void set_led(bool on)
 {
+#if CONFIG_BRIDGE_LED_NEOPIXEL
+    if (s_led_strip == NULL) {
+        return;
+    }
+    if (on) {
+        (void)led_strip_set_pixel(s_led_strip, 0, CONFIG_BRIDGE_LED_NEOPIXEL_RED, CONFIG_BRIDGE_LED_NEOPIXEL_GREEN,
+                                  CONFIG_BRIDGE_LED_NEOPIXEL_BLUE);
+    } else {
+        (void)led_strip_set_pixel(s_led_strip, 0, 0, 0, 0);
+    }
+    (void)led_strip_refresh(s_led_strip);
+#else
     gpio_set_level(CONFIG_BRIDGE_LED_PIN, CONFIG_BRIDGE_LED_ACTIVE_LOW ? !on : on);
+#endif
 }
 
 static void request_led_pulse(void)
@@ -222,8 +241,26 @@ static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, i
 
 static esp_err_t init_led(void)
 {
+#if CONFIG_BRIDGE_LED_NEOPIXEL
+    led_strip_config_t strip_config = {
+        .strip_gpio_num = CONFIG_BRIDGE_LED_PIN,
+        .max_leds = 1,
+        .led_model = LED_MODEL_WS2812,
+#if CONFIG_BRIDGE_LED_NEOPIXEL_COLOR_ORDER_RGB
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_RGB,
+#else
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+#endif
+    };
+    led_strip_rmt_config_t rmt_config = {
+        .resolution_hz = 10 * 1000 * 1000,
+    };
+    ESP_RETURN_ON_ERROR(led_strip_new_rmt_device(&strip_config, &rmt_config, &s_led_strip), TAG,
+                        "create NeoPixel LED strip");
+#else
     ESP_RETURN_ON_ERROR(gpio_reset_pin(CONFIG_BRIDGE_LED_PIN), TAG, "reset LED GPIO");
     ESP_RETURN_ON_ERROR(gpio_set_direction(CONFIG_BRIDGE_LED_PIN, GPIO_MODE_OUTPUT), TAG, "set LED GPIO direction");
+#endif
     set_led(false);
     s_led_queue = xQueueCreate(8, sizeof(uint8_t));
     ESP_RETURN_ON_FALSE(s_led_queue != NULL, ESP_ERR_NO_MEM, TAG, "create LED queue");

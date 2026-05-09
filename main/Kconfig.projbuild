@@ -98,9 +98,52 @@ config BRIDGE_LED_PIN
     int "Activity LED GPIO"
     default 2
 
+config BRIDGE_LED_NEOPIXEL
+    bool "Activity LED is WS2812/NeoPixel"
+    default n
+    help
+        Drive a single addressable RGB LED using the ESP-IDF led_strip
+        component. Use this for boards with an onboard WS2812/NeoPixel LED,
+        such as the Waveshare ESP32-C6-DEV-KIT-N8 RGB LED on GPIO8.
+
 config BRIDGE_LED_ACTIVE_LOW
     bool "Activity LED is active low"
+    depends on !BRIDGE_LED_NEOPIXEL
     default y
+
+choice BRIDGE_LED_NEOPIXEL_COLOR_ORDER
+    prompt "NeoPixel color component order"
+    depends on BRIDGE_LED_NEOPIXEL
+    default BRIDGE_LED_NEOPIXEL_COLOR_ORDER_GRB
+    help
+        Wire color order used by the addressable LED. Most WS2812 LEDs use
+        GRB, but some onboard LEDs use RGB.
+
+config BRIDGE_LED_NEOPIXEL_COLOR_ORDER_GRB
+    bool "GRB"
+
+config BRIDGE_LED_NEOPIXEL_COLOR_ORDER_RGB
+    bool "RGB"
+
+endchoice
+
+config BRIDGE_LED_NEOPIXEL_RED
+    int "NeoPixel pulse red value"
+    depends on BRIDGE_LED_NEOPIXEL
+    range 0 255
+    default 0
+
+config BRIDGE_LED_NEOPIXEL_GREEN
+    int "NeoPixel pulse green value"
+    depends on BRIDGE_LED_NEOPIXEL
+    range 0 255
+    default 32
+
+config BRIDGE_LED_NEOPIXEL_BLUE
+    int "NeoPixel pulse blue value"
+    depends on BRIDGE_LED_NEOPIXEL
+    range 0 255
+    default 0
 
 config BRIDGE_LED_PULSE_MS
     int "Activity LED pulse length (ms)"
