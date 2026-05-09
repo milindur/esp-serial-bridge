@@ -406,6 +406,9 @@ static void uart_packetizer_task(void *arg)
 
 static bool wait_for_send_result(void)
 {
+    const TickType_t started_at = xTaskGetTickCount();
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(CONFIG_BRIDGE_SEND_CALLBACK_TIMEOUT_MS);
+
     while (true) {
         const int send_result = atomic_load(&s_send_result);
         if (send_result == SEND_RESULT_SUCCESS) {
@@ -414,6 +417,13 @@ static bool wait_for_send_result(void)
         }
         if (send_result == SEND_RESULT_FAIL) {
             atomic_store(&s_send_result, SEND_RESULT_NONE);
+            return false;
+        }
+        if ((xTaskGetTickCount() - started_at) >= timeout_ticks) {
+            atomic_store(&s_send_result, SEND_RESULT_NONE);
+#if CONFIG_BRIDGE_DEBUG
+            ESP_LOGW(TAG, "ESP-NOW send callback timed out");
+#endif
             return false;
         }
         vTaskDelay(1);

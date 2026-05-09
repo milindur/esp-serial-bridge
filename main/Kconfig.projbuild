@@ -85,6 +85,15 @@ config BRIDGE_SEND_RETRY_DELAY_MS
     range 1 60000
     default 25
 
+config BRIDGE_SEND_CALLBACK_TIMEOUT_MS
+    int "Maximum wait for ESP-NOW send callback (ms)"
+    range 10 60000
+    default 1000
+    help
+        Maximum time to wait for ESP-NOW to report send success or failure
+        after esp_now_send() accepted a packet. If no callback arrives in time,
+        the packet is retried.
+
 config BRIDGE_LED_PIN
     int "Activity LED GPIO"
     default 2
