@@ -56,6 +56,16 @@ config BRIDGE_PACKET_SIZE
     range 1 250
     default 250
 
+config BRIDGE_TX_QUEUE_DEPTH
+    int "UART to ESP-NOW transmit queue depth"
+    range 1 128
+    default 16
+    help
+        Number of complete UART packets buffered before ESP-NOW transmission.
+        Increasing this helps absorb RF stalls or AIS bursts at the cost of
+        RAM. With the default 250-byte packet size, 16 packets buffer roughly
+        4 KiB of payload plus FreeRTOS queue overhead.
+
 config BRIDGE_RX_QUEUE_SIZE
     int "ESP-NOW RX byte queue size"
     range 64 65535

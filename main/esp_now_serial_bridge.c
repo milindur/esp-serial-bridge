@@ -38,14 +38,21 @@
 #define SEND_RESULT_SUCCESS 2
 #define SEND_RESULT_FAIL 3
 
+typedef struct {
+    size_t len;
+    uint8_t data[CONFIG_BRIDGE_PACKET_SIZE];
+} tx_packet_t;
+
 static const char *TAG = "esp_now_bridge";
 
 static uint8_t s_peer_addr[ESP_NOW_ETH_ALEN];
 static StreamBufferHandle_t s_rx_stream;
+static QueueHandle_t s_tx_queue;
 static QueueHandle_t s_led_queue;
-static atomic_bool s_send_in_flight = false;
 static atomic_int s_send_result = SEND_RESULT_NONE;
 
+static atomic_uint s_tx_dropped_packets = 0;
+static atomic_uint s_tx_dropped_bytes = 0;
 static atomic_uint s_rx_dropped = 0;
 static atomic_uint s_rx_received_packets = 0;
 static atomic_uint s_rx_received_bytes = 0;
@@ -189,8 +196,6 @@ static void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status
         cancel_led_pulse();
 #endif
     }
-
-    atomic_store(&s_send_in_flight, false);
 }
 
 static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
@@ -351,66 +356,93 @@ static void espnow_to_uart_task(void *arg)
     }
 }
 
-static void uart_to_espnow_task(void *arg)
+static void drop_tx_packet(const tx_packet_t *packet)
+{
+    atomic_fetch_add(&s_tx_dropped_packets, 1);
+    atomic_fetch_add(&s_tx_dropped_bytes, (unsigned)packet->len);
+}
+
+static void enqueue_tx_packet(tx_packet_t *packet)
+{
+    if (packet->len == 0) {
+        return;
+    }
+
+    if (xQueueSend(s_tx_queue, packet, 0) != pdTRUE) {
+        drop_tx_packet(packet);
+    }
+    packet->len = 0;
+}
+
+static void uart_packetizer_task(void *arg)
 {
     (void)arg;
-    uint8_t buffer[CONFIG_BRIDGE_PACKET_SIZE];
-    size_t buffer_len = 0;
-    bool packet_pending = false;
+    tx_packet_t packet = {0};
     int64_t send_timeout_us = 0;
-    int64_t next_send_attempt_ms = 0;
     const int64_t inter_byte_timeout_us = ((1000000LL * 20) + CONFIG_BRIDGE_BAUD_RATE - 1) / CONFIG_BRIDGE_BAUD_RATE;
 
     while (true) {
-        const int send_result = atomic_load(&s_send_result);
-        if (send_result == SEND_RESULT_SUCCESS) {
-            buffer_len = 0;
-            packet_pending = false;
-            atomic_store(&s_send_result, SEND_RESULT_NONE);
-        } else if (send_result == SEND_RESULT_FAIL) {
-            packet_pending = true;
-            next_send_attempt_ms = now_ms() + CONFIG_BRIDGE_SEND_RETRY_DELAY_MS;
-            atomic_store(&s_send_result, SEND_RESULT_NONE);
-        }
-
-        const bool send_in_flight = atomic_load(&s_send_in_flight);
         uint8_t byte = 0;
-        int read_len = 0;
-        if (!send_in_flight && !packet_pending && buffer_len < sizeof(buffer)) {
-            read_len = bridge_read_bytes(&byte, 1, UART_READ_TIMEOUT_TICKS);
-        } else {
-            vTaskDelay(1);
-        }
+        const int read_len = bridge_read_bytes(&byte, 1, UART_READ_TIMEOUT_TICKS);
 
         if (read_len == 1) {
-            buffer[buffer_len++] = byte;
+            packet.data[packet.len++] = byte;
             send_timeout_us = now_us() + inter_byte_timeout_us;
         }
 
-        const bool full = buffer_len == sizeof(buffer);
-        const bool timed_out = buffer_len > 0 && now_us() >= send_timeout_us;
-        if (buffer_len > 0 && (full || timed_out)) {
-            packet_pending = true;
+        const bool full = packet.len == sizeof(packet.data);
+        const bool line_complete = false;
+        const bool timed_out = packet.len > 0 && now_us() >= send_timeout_us;
+        const bool should_flush = packet.len > 0 && (full || line_complete || timed_out);
+        if (should_flush) {
+            enqueue_tx_packet(&packet);
+        }
+    }
+}
+
+static bool wait_for_send_result(void)
+{
+    while (true) {
+        const int send_result = atomic_load(&s_send_result);
+        if (send_result == SEND_RESULT_SUCCESS) {
+            atomic_store(&s_send_result, SEND_RESULT_NONE);
+            return true;
+        }
+        if (send_result == SEND_RESULT_FAIL) {
+            atomic_store(&s_send_result, SEND_RESULT_NONE);
+            return false;
+        }
+        vTaskDelay(1);
+    }
+}
+
+static void espnow_sender_task(void *arg)
+{
+    (void)arg;
+    tx_packet_t packet = {0};
+
+    while (true) {
+        if (xQueueReceive(s_tx_queue, &packet, portMAX_DELAY) != pdTRUE) {
+            continue;
         }
 
-        const bool retry_elapsed = now_ms() >= next_send_attempt_ms;
-
-        if (packet_pending && retry_elapsed && !send_in_flight) {
+        while (true) {
 #if CONFIG_BRIDGE_BLINK_ON_SEND
             request_led_pulse();
 #endif
             atomic_store(&s_send_result, SEND_RESULT_PENDING);
-            atomic_store(&s_send_in_flight, true);
-            esp_err_t err = esp_now_send(s_peer_addr, buffer, buffer_len);
+            esp_err_t err = esp_now_send(s_peer_addr, packet.data, packet.len);
+            if (err == ESP_OK && wait_for_send_result()) {
+                break;
+            }
+
             if (err != ESP_OK) {
-                atomic_store(&s_send_in_flight, false);
                 atomic_store(&s_send_result, SEND_RESULT_NONE);
-                packet_pending = true;
-                next_send_attempt_ms = now_ms() + CONFIG_BRIDGE_SEND_RETRY_DELAY_MS;
 #if CONFIG_BRIDGE_DEBUG
                 ESP_LOGW(TAG, "esp_now_send failed: %s", esp_err_to_name(err));
 #endif
             }
+            vTaskDelay(pdMS_TO_TICKS(CONFIG_BRIDGE_SEND_RETRY_DELAY_MS));
         }
     }
 }
@@ -423,6 +455,8 @@ static void telemetry_task(void *arg)
     unsigned last_rx_bytes = 0;
     unsigned last_rx_dropped = 0;
     unsigned last_rx_truncated = 0;
+    unsigned last_tx_dropped_packets = 0;
+    unsigned last_tx_dropped_bytes = 0;
     unsigned last_send_success = 0;
     unsigned last_send_fail = 0;
 
@@ -433,6 +467,8 @@ static void telemetry_task(void *arg)
         unsigned rx_bytes = atomic_load(&s_rx_received_bytes);
         unsigned rx_dropped = atomic_load(&s_rx_dropped);
         unsigned rx_truncated = atomic_load(&s_rx_truncated_bytes);
+        unsigned tx_dropped_packets = atomic_load(&s_tx_dropped_packets);
+        unsigned tx_dropped_bytes = atomic_load(&s_tx_dropped_bytes);
         unsigned send_success = atomic_load(&s_send_success_count);
         unsigned send_fail = atomic_load(&s_send_fail_count);
 
@@ -446,6 +482,12 @@ static void telemetry_task(void *arg)
                      rx_truncated - last_rx_truncated);
             last_rx_dropped = rx_dropped;
             last_rx_truncated = rx_truncated;
+        }
+        if (tx_dropped_packets != last_tx_dropped_packets) {
+            ESP_LOGW(TAG, "UART TX queue dropped packets: %u, bytes: %u", tx_dropped_packets - last_tx_dropped_packets,
+                     tx_dropped_bytes - last_tx_dropped_bytes);
+            last_tx_dropped_packets = tx_dropped_packets;
+            last_tx_dropped_bytes = tx_dropped_bytes;
         }
         if (send_success != last_send_success) {
             ESP_LOGI(TAG, "ESP-NOW send success: %u", send_success - last_send_success);
@@ -461,8 +503,11 @@ static void telemetry_task(void *arg)
 
 static esp_err_t start_bridge_tasks(void)
 {
-    BaseType_t ok = xTaskCreate(uart_to_espnow_task, "uart_to_espnow", 4096, NULL, 10, NULL);
-    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create UART-to-ESP-NOW task");
+    BaseType_t ok = xTaskCreate(uart_packetizer_task, "uart_packetizer", 4096, NULL, 10, NULL);
+    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create UART packetizer task");
+
+    ok = xTaskCreate(espnow_sender_task, "espnow_sender", 4096, NULL, 10, NULL);
+    ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create ESP-NOW sender task");
 
     ok = xTaskCreate(espnow_to_uart_task, "espnow_to_uart", 4096, NULL, 9, NULL);
     ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "create ESP-NOW-to-UART task");
@@ -488,6 +533,8 @@ void app_main(void)
 
     s_rx_stream = xStreamBufferCreate(CONFIG_BRIDGE_RX_QUEUE_SIZE, 1);
     ESP_ERROR_CHECK(s_rx_stream == NULL ? ESP_ERR_NO_MEM : ESP_OK);
+    s_tx_queue = xQueueCreate(CONFIG_BRIDGE_TX_QUEUE_DEPTH, sizeof(tx_packet_t));
+    ESP_ERROR_CHECK(s_tx_queue == NULL ? ESP_ERR_NO_MEM : ESP_OK);
 
     ESP_ERROR_CHECK(init_led());
     ESP_ERROR_CHECK(init_bridge_io());
