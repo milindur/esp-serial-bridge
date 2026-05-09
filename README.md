@@ -1,0 +1,59 @@
+# ESP-Serial-Bridge
+
+ESP32 ESP-NOW serial bridge for transmitting serial data between two boards.
+
+## Build and flash
+
+Set up ESP-IDF first, then build from the repository root:
+
+```sh
+source ~/.espressif/tools/activate_idf_v6.0.1.sh
+idf.py set-target esp32c3
+idf.py menuconfig
+idf.py build
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+If `idf.py` is not available, repair/install the ESP-IDF Python environment for v6.0.1 before building.
+
+## Configuration
+
+Run `idf.py menuconfig` and open **ESP-NOW Serial Bridge**.
+
+Important options:
+
+- **Peer WiFi STA MAC address**: required; set this to the opposite board's WiFi STA MAC. Default: `94:B9:7E:D9:DD:D4`.
+- **WiFi / ESP-NOW channel**: default `13`.
+- **Bridge UART baud rate**: default `115200`.
+- **UART number / TX / RX pins**: defaults match the sketch (`UART1`, TX GPIO `1`, RX GPIO `3`). These pins may be shared with USB-UART/boot logs on some boards; change them if needed.
+- **Activity LED**: GPIO, polarity, pulse length, and blink-on-send/recv behavior. By default it blinks on receive and successful send.
+- **Debug telemetry logs**: optional ESP-IDF log output with packet/drop/send counters.
+
+Hardware UART is the default bridge interface. On ESP32-C3/S3/C6-class targets, **Use USB Serial/JTAG for bridge traffic** can use the native `/dev/ttyACM*` CDC ACM port instead. If you use that port for payload data, monitor/debug logs share the same stream and can interfere with binary protocols.
+
+## Optional ESP-NOW encryption
+
+ESP-NOW encryption is disabled by default. Enable **ESP-NOW Serial Bridge → Enable ESP-NOW encryption** in menuconfig on both boards.
+
+Both boards must use identical 16-byte PMK and LMK values, configured as 32 hex characters:
+
+```sh
+openssl rand -hex 16
+```
+
+Keep real keys secret and do not commit production keys. The defaults are example values only.
+
+## Notes
+
+- ESP-NOW payload size is capped at 250 bytes.
+- The UART-to-ESP-NOW packet timeout follows the original sketch: about 20 bit-times at the configured baud rate.
+- WiFi sleep is disabled for lower latency.
+- Country defaults to `DE`; verify channel and transmit power settings are legal in your region.
+
+## Acknowledgements
+
+This project is an ESP-IDF reimplementation based on and inspired by the original Arduino implementation [ESP-Now-Serial-Bridge](https://github.com/yuri-rage/ESP-Now-Serial-Bridge) by yuri-rage. The original project's license notice is preserved in substance by using the same permissive MIT license terms.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

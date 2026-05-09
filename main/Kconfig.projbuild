@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: MIT
+
+menu "ESP-NOW Serial Bridge"
+
+config BRIDGE_PEER_MAC
+    string "Peer WiFi STA MAC address (required)"
+    default "94:B9:7E:D9:DD:D4"
+    help
+        Required WiFi STA MAC address of the opposite board, formatted as AA:BB:CC:DD:EE:FF.
+
+config BRIDGE_WIFI_CHANNEL
+    int "WiFi / ESP-NOW channel"
+    range 1 14
+    default 13
+
+config BRIDGE_WIFI_COUNTRY
+    string "WiFi country code"
+    default "DE"
+
+config BRIDGE_WIFI_MAX_TX_POWER
+    int "Maximum WiFi TX power (quarter-dBm)"
+    range 8 84
+    default 72
+    help
+        ESP-IDF uses quarter-dBm units. 72 equals 18 dBm.
+
+config BRIDGE_BAUD_RATE
+    int "Bridge UART baud rate"
+    default 115200
+
+config BRIDGE_UART_NUM
+    int "Bridge UART number"
+    range 0 2
+    default 1
+
+config BRIDGE_TX_PIN
+    int "Bridge UART TX GPIO"
+    default 1
+
+config BRIDGE_RX_PIN
+    int "Bridge UART RX GPIO"
+    default 3
+
+config BRIDGE_USE_USB_CDC
+    bool "Use USB Serial/JTAG for bridge traffic"
+    depends on SOC_USB_SERIAL_JTAG_SUPPORTED
+    default n
+    help
+        Use the chip's native USB Serial/JTAG CDC ACM port for bridge traffic.
+        This is the /dev/ttyACM* interface on ESP32-C3/S3/C6-class targets.
+        Debug logs share the same port and may interfere with binary payload data.
+
+config BRIDGE_PACKET_SIZE
+    int "ESP-NOW packet size"
+    range 1 250
+    default 250
+
+config BRIDGE_RX_QUEUE_SIZE
+    int "ESP-NOW RX byte queue size"
+    range 64 65535
+    default 1024
+
+config BRIDGE_SEND_RETRY_DELAY_MS
+    int "Delay before retrying esp_now_send() API errors (ms)"
+    range 1 60000
+    default 25
+
+config BRIDGE_LED_PIN
+    int "Activity LED GPIO"
+    default 2
+
+config BRIDGE_LED_ACTIVE_LOW
+    bool "Activity LED is active low"
+    default y
+
+config BRIDGE_LED_PULSE_MS
+    int "Activity LED pulse length (ms)"
+    range 1 10000
+    default 25
+
+config BRIDGE_BLINK_ON_SEND
+    bool "Blink when an ESP-NOW send is started"
+    default n
+
+config BRIDGE_BLINK_ON_SEND_SUCCESS
+    bool "Blink when an ESP-NOW send succeeds"
+    default y
+
+config BRIDGE_BLINK_ON_RECV
+    bool "Blink when ESP-NOW data is received"
+    default y
+
+config BRIDGE_DEBUG
+    bool "Enable debug telemetry logs"
+    default n
+
+config BRIDGE_DEBUG_TELEMETRY_INTERVAL_MS
+    int "Debug telemetry polling interval (ms)"
+    range 100 600000
+    default 1000
+    depends on BRIDGE_DEBUG
+
+config BRIDGE_ESPNOW_ENCRYPTION
+    bool "Enable ESP-NOW encryption"
+    default n
+
+config BRIDGE_ESPNOW_PMK_HEX
+    string "ESP-NOW PMK (32 hex chars)"
+    default "000102030405060708090A0B0C0D0E0F"
+    depends on BRIDGE_ESPNOW_ENCRYPTION
+
+config BRIDGE_ESPNOW_LMK_HEX
+    string "ESP-NOW LMK (32 hex chars)"
+    default "101112131415161718191A1B1C1D1E1F"
+    depends on BRIDGE_ESPNOW_ENCRYPTION
+
+endmenu

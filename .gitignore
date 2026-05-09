@@ -1,0 +1,53 @@
+# ESP-IDF build output
+build*/
+
+# ESP-IDF generated / backup config files
+sdkconfig
+sdkconfig.old
+sdkconfig.*.old
+
+# ESP-IDF managed dependencies (recreated by idf.py)
+managed_components/
+dependencies.lock.tmp
+
+# CMake / Ninja generated files (in case of out-of-tree builds)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Firmware / linker artifacts
+*.bin
+*.elf
+*.map
+*.hex
+*.uf2
+*.lst
+
+# Python / tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.cache/
+
+# Local environment files
+.env
+.env.*
+.envrc
+venv/
+.venv/
+
+# Editor / IDE local settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db

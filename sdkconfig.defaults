@@ -1,0 +1,20 @@
+# This file was generated using idf.py save-defconfig or menuconfig [D] key. It can be edited manually.
+# Espressif IoT Development Framework (ESP-IDF) 6.0.1 Project Minimal Configuration
+#
+# default:
+CONFIG_IDF_TARGET="esp32c3"
+
+#
+# ESP-NOW Serial Bridge
+#
+CONFIG_BRIDGE_PEER_MAC="94:B9:7E:D9:DD:D4"
+CONFIG_BRIDGE_BAUD_RATE=115200
+CONFIG_BRIDGE_TX_PIN=1
+CONFIG_BRIDGE_RX_PIN=3
+# CONFIG_BRIDGE_USE_USB_CDC is not set
+CONFIG_BRIDGE_LED_PIN=2
+# CONFIG_BRIDGE_DEBUG is not set
+# CONFIG_BRIDGE_ESPNOW_ENCRYPTION is not set
+CONFIG_BRIDGE_ESPNOW_PMK_HEX="0102030405060708090a0b0c0d0e0f10"
+CONFIG_BRIDGE_ESPNOW_LMK_HEX="1112131415161718191a1b1c1d1e1f20"
+# end of ESP-NOW Serial Bridge
