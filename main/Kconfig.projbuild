@@ -10,7 +10,7 @@ config BRIDGE_PEER_MAC
 
 config BRIDGE_WIFI_CHANNEL
     int "WiFi / ESP-NOW channel"
-    range 1 14
+    range 1 13
     default 13
 
 config BRIDGE_WIFI_COUNTRY
