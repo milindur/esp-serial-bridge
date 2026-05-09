@@ -51,11 +51,6 @@ config BRIDGE_USE_USB_CDC
         This is the /dev/ttyACM* interface on ESP32-C3/S3/C6-class targets.
         Debug logs share the same port and may interfere with binary payload data.
 
-config BRIDGE_PACKET_SIZE
-    int "ESP-NOW packet size"
-    range 1 250
-    default 250
-
 config BRIDGE_PACKET_SPLIT_ON_LF
     bool "Flush UART packets on line feed"
     default n

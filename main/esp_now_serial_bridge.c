@@ -31,6 +31,7 @@
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#define BRIDGE_PACKET_SIZE ESP_NOW_MAX_DATA_LEN
 #define UART_RX_BUFFER_SIZE 2048
 #define UART_TX_BUFFER_SIZE 2048
 #define UART_READ_TIMEOUT_TICKS 1
@@ -44,7 +45,7 @@
 
 typedef struct {
     size_t len;
-    uint8_t data[CONFIG_BRIDGE_PACKET_SIZE];
+    uint8_t data[BRIDGE_PACKET_SIZE];
 } tx_packet_t;
 
 static const char *TAG = "esp_now_bridge";
@@ -278,7 +279,7 @@ static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, i
     request_led_recv_pulse();
 #endif
 
-    const size_t capped_len = len > CONFIG_BRIDGE_PACKET_SIZE ? CONFIG_BRIDGE_PACKET_SIZE : (size_t)len;
+    const size_t capped_len = len > BRIDGE_PACKET_SIZE ? BRIDGE_PACKET_SIZE : (size_t)len;
     const size_t written = xStreamBufferSend(s_rx_stream, data, capped_len, 0);
 
     atomic_fetch_add(&s_rx_received_packets, 1);
