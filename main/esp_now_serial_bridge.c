@@ -247,9 +247,12 @@ static esp_err_t init_bridge_io(void)
     };
 
     const uart_port_t uart_num = (uart_port_t)CONFIG_BRIDGE_UART_NUM;
-    ESP_RETURN_ON_ERROR(uart_driver_install(uart_num, UART_RX_BUFFER_SIZE, UART_TX_BUFFER_SIZE, 0, NULL, 0), TAG, "install UART driver");
+    ESP_RETURN_ON_ERROR(uart_driver_install(uart_num, UART_RX_BUFFER_SIZE, UART_TX_BUFFER_SIZE, 0, NULL, 0), TAG,
+                        "install UART driver");
     ESP_RETURN_ON_ERROR(uart_param_config(uart_num, &uart_config), TAG, "configure UART");
-    ESP_RETURN_ON_ERROR(uart_set_pin(uart_num, CONFIG_BRIDGE_TX_PIN, CONFIG_BRIDGE_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG, "set UART pins");
+    ESP_RETURN_ON_ERROR(
+        uart_set_pin(uart_num, CONFIG_BRIDGE_TX_PIN, CONFIG_BRIDGE_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG,
+        "set UART pins");
     return ESP_OK;
 #endif
 }
@@ -293,7 +296,8 @@ static esp_err_t init_wifi(void)
     };
     ESP_RETURN_ON_ERROR(esp_wifi_set_country(&country), TAG, "set wifi country");
     ESP_RETURN_ON_ERROR(esp_wifi_set_max_tx_power(CONFIG_BRIDGE_WIFI_MAX_TX_POWER), TAG, "set wifi tx power");
-    ESP_RETURN_ON_ERROR(esp_wifi_set_channel(CONFIG_BRIDGE_WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE), TAG, "set wifi channel");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_channel(CONFIG_BRIDGE_WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE), TAG,
+                        "set wifi channel");
 
     return ESP_OK;
 }
@@ -355,8 +359,7 @@ static void uart_to_espnow_task(void *arg)
     bool packet_pending = false;
     int64_t send_timeout_us = 0;
     int64_t next_send_attempt_ms = 0;
-    const int64_t inter_byte_timeout_us =
-        ((1000000LL * 20) + CONFIG_BRIDGE_BAUD_RATE - 1) / CONFIG_BRIDGE_BAUD_RATE;
+    const int64_t inter_byte_timeout_us = ((1000000LL * 20) + CONFIG_BRIDGE_BAUD_RATE - 1) / CONFIG_BRIDGE_BAUD_RATE;
 
     while (true) {
         const int send_result = atomic_load(&s_send_result);
@@ -439,7 +442,8 @@ static void telemetry_task(void *arg)
             last_rx_bytes = rx_bytes;
         }
         if (rx_dropped != last_rx_dropped || rx_truncated != last_rx_truncated) {
-            ESP_LOGW(TAG, "ESP-NOW RX dropped: %u, truncated: %u", rx_dropped - last_rx_dropped, rx_truncated - last_rx_truncated);
+            ESP_LOGW(TAG, "ESP-NOW RX dropped: %u, truncated: %u", rx_dropped - last_rx_dropped,
+                     rx_truncated - last_rx_truncated);
             last_rx_dropped = rx_dropped;
             last_rx_truncated = rx_truncated;
         }
@@ -492,10 +496,10 @@ void app_main(void)
 
     uint8_t own_mac[ESP_NOW_ETH_ALEN] = {0};
     ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_STA, own_mac));
-    ESP_LOGI(TAG, "ESP32 MAC address: %02X:%02X:%02X:%02X:%02X:%02X",
-             own_mac[0], own_mac[1], own_mac[2], own_mac[3], own_mac[4], own_mac[5]);
-    ESP_LOGI(TAG, "Peer MAC address: %02X:%02X:%02X:%02X:%02X:%02X",
-             s_peer_addr[0], s_peer_addr[1], s_peer_addr[2], s_peer_addr[3], s_peer_addr[4], s_peer_addr[5]);
+    ESP_LOGI(TAG, "ESP32 MAC address: %02X:%02X:%02X:%02X:%02X:%02X", own_mac[0], own_mac[1], own_mac[2], own_mac[3],
+             own_mac[4], own_mac[5]);
+    ESP_LOGI(TAG, "Peer MAC address: %02X:%02X:%02X:%02X:%02X:%02X", s_peer_addr[0], s_peer_addr[1], s_peer_addr[2],
+             s_peer_addr[3], s_peer_addr[4], s_peer_addr[5]);
 #if CONFIG_BRIDGE_ESPNOW_ENCRYPTION
     ESP_LOGI(TAG, "ESP-NOW encryption: enabled");
 #else
@@ -504,8 +508,8 @@ void app_main(void)
 #if CONFIG_BRIDGE_USE_USB_CDC
     ESP_LOGI(TAG, "Bridge I/O: USB Serial/JTAG CDC ACM, channel %d", CONFIG_BRIDGE_WIFI_CHANNEL);
 #else
-    ESP_LOGI(TAG, "Bridge I/O: UART%d %d baud, TX GPIO %d, RX GPIO %d, channel %d",
-             CONFIG_BRIDGE_UART_NUM, CONFIG_BRIDGE_BAUD_RATE, CONFIG_BRIDGE_TX_PIN, CONFIG_BRIDGE_RX_PIN, CONFIG_BRIDGE_WIFI_CHANNEL);
+    ESP_LOGI(TAG, "Bridge I/O: UART%d %d baud, TX GPIO %d, RX GPIO %d, channel %d", CONFIG_BRIDGE_UART_NUM,
+             CONFIG_BRIDGE_BAUD_RATE, CONFIG_BRIDGE_TX_PIN, CONFIG_BRIDGE_RX_PIN, CONFIG_BRIDGE_WIFI_CHANNEL);
 #endif
 
     ESP_ERROR_CHECK(start_bridge_tasks());
