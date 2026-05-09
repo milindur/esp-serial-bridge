@@ -34,8 +34,9 @@
 #define UART_RX_BUFFER_SIZE 2048
 #define UART_TX_BUFFER_SIZE 2048
 #define UART_READ_TIMEOUT_TICKS 1
-#define LED_EVENT_PULSE 1
-#define LED_EVENT_CANCEL 2
+#define LED_EVENT_SEND 1
+#define LED_EVENT_RECV 2
+#define LED_EVENT_CANCEL_SEND 3
 #define SEND_RESULT_NONE 0
 #define SEND_RESULT_PENDING 1
 #define SEND_RESULT_SUCCESS 2
@@ -131,37 +132,71 @@ static esp_err_t parse_hex_key(const char *text, uint8_t out[ESP_NOW_KEY_LEN])
 }
 #endif
 
-static void set_led(bool on)
+#if CONFIG_BRIDGE_LED_NEOPIXEL
+#define LED_SEND_RED 0
+#define LED_SEND_GREEN 0
+#define LED_SEND_BLUE 32
+#define LED_RECV_RED 0
+#define LED_RECV_GREEN 32
+#define LED_RECV_BLUE 0
+#define LED_BOTH_RED 32
+#define LED_BOTH_GREEN 16
+#define LED_BOTH_BLUE 0
+#endif
+
+static void set_led_activity(bool send_active, bool recv_active)
 {
 #if CONFIG_BRIDGE_LED_NEOPIXEL
     if (s_led_strip == NULL) {
         return;
     }
-    if (on) {
-        (void)led_strip_set_pixel(s_led_strip, 0, CONFIG_BRIDGE_LED_NEOPIXEL_RED, CONFIG_BRIDGE_LED_NEOPIXEL_GREEN,
-                                  CONFIG_BRIDGE_LED_NEOPIXEL_BLUE);
-    } else {
-        (void)led_strip_set_pixel(s_led_strip, 0, 0, 0, 0);
+
+    uint32_t red = 0;
+    uint32_t green = 0;
+    uint32_t blue = 0;
+    if (send_active && recv_active) {
+        red = LED_BOTH_RED;
+        green = LED_BOTH_GREEN;
+        blue = LED_BOTH_BLUE;
+    } else if (send_active) {
+        red = LED_SEND_RED;
+        green = LED_SEND_GREEN;
+        blue = LED_SEND_BLUE;
+    } else if (recv_active) {
+        red = LED_RECV_RED;
+        green = LED_RECV_GREEN;
+        blue = LED_RECV_BLUE;
     }
+
+    (void)led_strip_set_pixel(s_led_strip, 0, red, green, blue);
     (void)led_strip_refresh(s_led_strip);
 #else
+    const bool on = send_active || recv_active;
     gpio_set_level(CONFIG_BRIDGE_LED_PIN, CONFIG_BRIDGE_LED_ACTIVE_LOW ? !on : on);
 #endif
 }
 
-static void request_led_pulse(void)
+static void request_led_send_pulse(void)
 {
     if (s_led_queue != NULL) {
-        const uint8_t event = LED_EVENT_PULSE;
+        const uint8_t event = LED_EVENT_SEND;
+        (void)xQueueSend(s_led_queue, &event, 0);
+    }
+}
+
+static void request_led_recv_pulse(void)
+{
+    if (s_led_queue != NULL) {
+        const uint8_t event = LED_EVENT_RECV;
         (void)xQueueSend(s_led_queue, &event, 0);
     }
 }
 
 #if CONFIG_BRIDGE_BLINK_ON_SEND_SUCCESS
-static void cancel_led_pulse(void)
+static void cancel_led_send_pulse(void)
 {
     if (s_led_queue != NULL) {
-        const uint8_t event = LED_EVENT_CANCEL;
+        const uint8_t event = LED_EVENT_CANCEL_SEND;
         (void)xQueueSend(s_led_queue, &event, 0);
     }
 }
@@ -170,30 +205,43 @@ static void cancel_led_pulse(void)
 static void led_task(void *arg)
 {
     (void)arg;
-    int64_t led_off_at = 0;
-    set_led(false);
+    int64_t send_led_off_at = 0;
+    int64_t recv_led_off_at = 0;
+    set_led_activity(false, false);
 
     while (true) {
+        const int64_t now = now_ms();
+        if (send_led_off_at != 0 && now >= send_led_off_at) {
+            send_led_off_at = 0;
+        }
+        if (recv_led_off_at != 0 && now >= recv_led_off_at) {
+            recv_led_off_at = 0;
+        }
+        set_led_activity(send_led_off_at != 0, recv_led_off_at != 0);
+
         uint8_t event = 0;
         TickType_t wait_ticks = portMAX_DELAY;
-        if (led_off_at != 0) {
-            int64_t remaining_ms = led_off_at - now_ms();
+        int64_t next_off_at = 0;
+        if (send_led_off_at != 0 && (next_off_at == 0 || send_led_off_at < next_off_at)) {
+            next_off_at = send_led_off_at;
+        }
+        if (recv_led_off_at != 0 && (next_off_at == 0 || recv_led_off_at < next_off_at)) {
+            next_off_at = recv_led_off_at;
+        }
+        if (next_off_at != 0) {
+            int64_t remaining_ms = next_off_at - now_ms();
             wait_ticks = remaining_ms > 0 ? pdMS_TO_TICKS(remaining_ms) : 0;
         }
 
         if (xQueueReceive(s_led_queue, &event, wait_ticks) == pdTRUE) {
-            if (event == LED_EVENT_CANCEL) {
-                led_off_at = 0;
-                set_led(false);
-            } else if (event == LED_EVENT_PULSE) {
-                set_led(true);
-                led_off_at = now_ms() + CONFIG_BRIDGE_LED_PULSE_MS;
+            const int64_t off_at = now_ms() + CONFIG_BRIDGE_LED_PULSE_MS;
+            if (event == LED_EVENT_CANCEL_SEND) {
+                send_led_off_at = 0;
+            } else if (event == LED_EVENT_SEND) {
+                send_led_off_at = off_at;
+            } else if (event == LED_EVENT_RECV) {
+                recv_led_off_at = off_at;
             }
-        }
-
-        if (led_off_at != 0 && now_ms() >= led_off_at) {
-            led_off_at = 0;
-            set_led(false);
         }
     }
 }
@@ -206,13 +254,13 @@ static void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status
         atomic_fetch_add(&s_send_success_count, 1);
         atomic_store(&s_send_result, SEND_RESULT_SUCCESS);
 #if CONFIG_BRIDGE_BLINK_ON_SEND_SUCCESS
-        request_led_pulse();
+        request_led_send_pulse();
 #endif
     } else {
         atomic_fetch_add(&s_send_fail_count, 1);
         atomic_store(&s_send_result, SEND_RESULT_FAIL);
 #if CONFIG_BRIDGE_BLINK_ON_SEND_SUCCESS
-        cancel_led_pulse();
+        cancel_led_send_pulse();
 #endif
     }
 }
@@ -227,7 +275,7 @@ static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, i
     }
 
 #if CONFIG_BRIDGE_BLINK_ON_RECV
-    request_led_pulse();
+    request_led_recv_pulse();
 #endif
 
     const size_t capped_len = len > CONFIG_BRIDGE_PACKET_SIZE ? CONFIG_BRIDGE_PACKET_SIZE : (size_t)len;
@@ -261,7 +309,7 @@ static esp_err_t init_led(void)
     ESP_RETURN_ON_ERROR(gpio_reset_pin(CONFIG_BRIDGE_LED_PIN), TAG, "reset LED GPIO");
     ESP_RETURN_ON_ERROR(gpio_set_direction(CONFIG_BRIDGE_LED_PIN, GPIO_MODE_OUTPUT), TAG, "set LED GPIO direction");
 #endif
-    set_led(false);
+    set_led_activity(false, false);
     s_led_queue = xQueueCreate(8, sizeof(uint8_t));
     ESP_RETURN_ON_FALSE(s_led_queue != NULL, ESP_ERR_NO_MEM, TAG, "create LED queue");
     BaseType_t ok = xTaskCreate(led_task, "bridge_led", 2048, NULL, 4, NULL);
@@ -479,7 +527,7 @@ static void espnow_sender_task(void *arg)
 
         while (true) {
 #if CONFIG_BRIDGE_BLINK_ON_SEND
-            request_led_pulse();
+            request_led_send_pulse();
 #endif
             atomic_store(&s_send_result, SEND_RESULT_PENDING);
             esp_err_t err = esp_now_send(s_peer_addr, packet.data, packet.len);

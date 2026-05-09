@@ -127,24 +127,6 @@ config BRIDGE_LED_NEOPIXEL_COLOR_ORDER_RGB
 
 endchoice
 
-config BRIDGE_LED_NEOPIXEL_RED
-    int "NeoPixel pulse red value"
-    depends on BRIDGE_LED_NEOPIXEL
-    range 0 255
-    default 0
-
-config BRIDGE_LED_NEOPIXEL_GREEN
-    int "NeoPixel pulse green value"
-    depends on BRIDGE_LED_NEOPIXEL
-    range 0 255
-    default 32
-
-config BRIDGE_LED_NEOPIXEL_BLUE
-    int "NeoPixel pulse blue value"
-    depends on BRIDGE_LED_NEOPIXEL
-    range 0 255
-    default 0
-
 config BRIDGE_LED_PULSE_MS
     int "Activity LED pulse length (ms)"
     range 1 10000
