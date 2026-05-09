@@ -33,6 +33,10 @@
 #define UART_READ_TIMEOUT_TICKS 1
 #define LED_EVENT_PULSE 1
 #define LED_EVENT_CANCEL 2
+#define SEND_RESULT_NONE 0
+#define SEND_RESULT_PENDING 1
+#define SEND_RESULT_SUCCESS 2
+#define SEND_RESULT_FAIL 3
 
 static const char *TAG = "esp_now_bridge";
 
@@ -40,6 +44,7 @@ static uint8_t s_peer_addr[ESP_NOW_ETH_ALEN];
 static StreamBufferHandle_t s_rx_stream;
 static QueueHandle_t s_led_queue;
 static atomic_bool s_send_in_flight = false;
+static atomic_int s_send_result = SEND_RESULT_NONE;
 
 static atomic_uint s_rx_dropped = 0;
 static atomic_uint s_rx_received_packets = 0;
@@ -170,19 +175,22 @@ static void led_task(void *arg)
 static void on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status)
 {
     (void)tx_info;
-    atomic_store(&s_send_in_flight, false);
 
     if (status == ESP_NOW_SEND_SUCCESS) {
         atomic_fetch_add(&s_send_success_count, 1);
+        atomic_store(&s_send_result, SEND_RESULT_SUCCESS);
 #if CONFIG_BRIDGE_BLINK_ON_SEND_SUCCESS
         request_led_pulse();
 #endif
     } else {
         atomic_fetch_add(&s_send_fail_count, 1);
+        atomic_store(&s_send_result, SEND_RESULT_FAIL);
 #if CONFIG_BRIDGE_BLINK_ON_SEND_SUCCESS
         cancel_led_pulse();
 #endif
     }
+
+    atomic_store(&s_send_in_flight, false);
 }
 
 static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
@@ -344,15 +352,28 @@ static void uart_to_espnow_task(void *arg)
     (void)arg;
     uint8_t buffer[CONFIG_BRIDGE_PACKET_SIZE];
     size_t buffer_len = 0;
+    bool packet_pending = false;
     int64_t send_timeout_us = 0;
     int64_t next_send_attempt_ms = 0;
     const int64_t inter_byte_timeout_us =
         ((1000000LL * 20) + CONFIG_BRIDGE_BAUD_RATE - 1) / CONFIG_BRIDGE_BAUD_RATE;
 
     while (true) {
+        const int send_result = atomic_load(&s_send_result);
+        if (send_result == SEND_RESULT_SUCCESS) {
+            buffer_len = 0;
+            packet_pending = false;
+            atomic_store(&s_send_result, SEND_RESULT_NONE);
+        } else if (send_result == SEND_RESULT_FAIL) {
+            packet_pending = true;
+            next_send_attempt_ms = now_ms() + CONFIG_BRIDGE_SEND_RETRY_DELAY_MS;
+            atomic_store(&s_send_result, SEND_RESULT_NONE);
+        }
+
+        const bool send_in_flight = atomic_load(&s_send_in_flight);
         uint8_t byte = 0;
         int read_len = 0;
-        if (buffer_len < sizeof(buffer)) {
+        if (!send_in_flight && !packet_pending && buffer_len < sizeof(buffer)) {
             read_len = bridge_read_bytes(&byte, 1, UART_READ_TIMEOUT_TICKS);
         } else {
             vTaskDelay(1);
@@ -365,18 +386,23 @@ static void uart_to_espnow_task(void *arg)
 
         const bool full = buffer_len == sizeof(buffer);
         const bool timed_out = buffer_len > 0 && now_us() >= send_timeout_us;
+        if (buffer_len > 0 && (full || timed_out)) {
+            packet_pending = true;
+        }
+
         const bool retry_elapsed = now_ms() >= next_send_attempt_ms;
 
-        if (buffer_len > 0 && (full || timed_out) && retry_elapsed && !atomic_load(&s_send_in_flight)) {
+        if (packet_pending && retry_elapsed && !send_in_flight) {
 #if CONFIG_BRIDGE_BLINK_ON_SEND
             request_led_pulse();
 #endif
+            atomic_store(&s_send_result, SEND_RESULT_PENDING);
             atomic_store(&s_send_in_flight, true);
             esp_err_t err = esp_now_send(s_peer_addr, buffer, buffer_len);
-            if (err == ESP_OK) {
-                buffer_len = 0;
-            } else {
+            if (err != ESP_OK) {
                 atomic_store(&s_send_in_flight, false);
+                atomic_store(&s_send_result, SEND_RESULT_NONE);
+                packet_pending = true;
                 next_send_attempt_ms = now_ms() + CONFIG_BRIDGE_SEND_RETRY_DELAY_MS;
 #if CONFIG_BRIDGE_DEBUG
                 ESP_LOGW(TAG, "esp_now_send failed: %s", esp_err_to_name(err));
