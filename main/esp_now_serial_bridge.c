@@ -343,7 +343,8 @@ static void uart_to_espnow_task(void *arg)
     size_t buffer_len = 0;
     int64_t send_timeout_us = 0;
     int64_t next_send_attempt_ms = 0;
-    const int64_t inter_byte_timeout_us = (1000000 / CONFIG_BRIDGE_BAUD_RATE) * 20;
+    const int64_t inter_byte_timeout_us =
+        ((1000000LL * 20) + CONFIG_BRIDGE_BAUD_RATE - 1) / CONFIG_BRIDGE_BAUD_RATE;
 
     while (true) {
         uint8_t byte = 0;
