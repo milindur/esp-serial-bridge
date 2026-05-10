@@ -1,0 +1,40 @@
+body {
+  font-family: sans-serif;
+  margin: 2rem;
+  background: #101820;
+  color: #f4f7fb;
+}
+
+main {
+  max-width: 760px;
+  margin: auto;
+}
+
+.card {
+  background: #1c2a36;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) 2fr;
+  gap: .55rem 1rem;
+}
+
+dt {
+  color: #9fb3c8;
+}
+
+dd {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+}
+
+.bad {
+  color: #ffb4a8;
+}

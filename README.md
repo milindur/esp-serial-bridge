@@ -18,7 +18,7 @@ If `idf.py` is not available, repair/install the ESP-IDF Python environment for 
 
 ### Waveshare ESP32-C6-Dev-Kit-N8 / 8 MB OTA layout
 
-For the Waveshare ESP32-C6-Dev-Kit-N8, use the dedicated 8 MB OTA profile. It uses `partitions_8mb_ota.csv` with two large OTA app slots so a future web updater can write firmware directly to the inactive slot.
+For the Waveshare ESP32-C6-Dev-Kit-N8, use the dedicated 8 MB OTA profile. It uses `partitions_8mb_ota.csv` with two 3 MiB OTA app slots so a future web updater can write firmware directly to the inactive slot, plus a 1.875 MiB `storage` SPIFFS partition for diagnostics web assets.
 
 Use a separate build directory and sdkconfig file for this board:
 
@@ -71,11 +71,14 @@ http://<configured-ap-ip>/
 
 The page is read-only and build-time configured only. It exposes bridge status such as uptime, STA/peer MACs, channel, ESP-NOW RX/send counters, and UART-to-ESP-NOW drop counters. The JSON endpoint is available at `/api/status`.
 
+The static diagnostics assets live in `main/web` and are packed into the `storage` SPIFFS partition. Because the SPIFFS image is marked `FLASH_IN_PROJECT`, `idf.py flash` writes the web assets together with the firmware.
+
 Notes:
 
 - WPA3 SoftAP/SAE support is required.
 - The SoftAP uses the same channel as ESP-NOW (`CONFIG_BRIDGE_WIFI_CHANNEL`).
 - The AP netmask is fixed to `/24`; DHCP leases are derived automatically from the configured AP IP.
+- The `storage` partition is 1.875 MiB; keep diagnostics assets reasonably small.
 
 ## Optional ESP-NOW encryption
 

@@ -16,39 +16,20 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_spiffs.h"
 #include "esp_wifi.h"
 #include "dhcpserver/dhcpserver.h"
 #include "sdkconfig.h"
 
 #define DIAG_AP_MAX_CLIENTS 2
 #define DIAG_JSON_BUFFER_SIZE 768
+#define DIAG_ASSET_BASE_PATH "/spiffs"
+#define DIAG_ASSET_PARTITION_LABEL "storage"
+#define DIAG_ASSET_CHUNK_SIZE 1024
 
 static const char *TAG = "bridge_diag";
 static esp_netif_t *s_ap_netif;
 static httpd_handle_t s_http_server;
-
-static const char s_index_html[] =
-    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<title>ESP Serial Bridge Diagnostics</title>"
-    "<style>body{font-family:sans-serif;margin:2rem;background:#101820;color:#f4f7fb}"
-    "main{max-width:760px;margin:auto}.card{background:#1c2a36;border-radius:12px;padding:1rem 1.25rem}"
-    "h1{font-size:1.5rem}dl{display:grid;grid-template-columns:minmax(12rem,1fr) 2fr;gap:.55rem 1rem}"
-    "dt{color:#9fb3c8}dd{margin:0;font-family:ui-monospace,monospace}.bad{color:#ffb4a8}</style></head>"
-    "<body><main><h1>ESP Serial Bridge Diagnostics</h1><div class=\"card\"><dl id=\"status\"></dl>"
-    "<p id=\"state\">Loading...</p></div></main><script>"
-    "const statusEl=document.getElementById('status'),stateEl=document.getElementById('state');"
-    "const labels={uptime_ms:'Uptime',own_mac:'Own STA MAC',peer_mac:'Peer MAC',channel:'WiFi / ESP-NOW channel',"
-    "rx_received_packets:'ESP-NOW RX packets',rx_received_bytes:'ESP-NOW RX bytes',rx_dropped_bytes:'ESP-NOW RX dropped bytes',"
-    "rx_truncated_bytes:'ESP-NOW RX truncated bytes',send_success_count:'ESP-NOW send success count',"
-    "send_fail_count:'ESP-NOW send fail count',tx_dropped_packets:'UART-to-ESP-NOW TX dropped packets',"
-    "tx_dropped_bytes:'UART-to-ESP-NOW TX dropped bytes'};"
-    "function val(k,v){if(k==='uptime_ms'){let s=Math.floor(v/1000);return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m '+s%60+'s'}return v}"
-    "async function poll(){try{let r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw new Error(r.status);let j=await r.json();"
-    "statusEl.innerHTML=Object.keys(labels).map(k=>'<dt>'+labels[k]+'</dt><dd>'+val(k,j[k])+'</dd>').join('');"
-    "stateEl.textContent='Updated '+new Date().toLocaleTimeString();stateEl.className=''}"
-    "catch(e){stateEl.textContent='Update failed: '+e;stateEl.className='bad'}}poll();setInterval(poll,2000);"
-    "</script></body></html>";
 
 static esp_err_t validate_password(void)
 {
@@ -133,10 +114,93 @@ esp_err_t diagnostics_web_configure_softap(void)
     return ESP_OK;
 }
 
-static esp_err_t index_handler(httpd_req_t *req)
+static esp_err_t diagnostics_web_mount_assets(void)
 {
-    httpd_resp_set_type(req, "text/html; charset=utf-8");
-    return httpd_resp_send(req, s_index_html, HTTPD_RESP_USE_STRLEN);
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = DIAG_ASSET_BASE_PATH,
+        .partition_label = DIAG_ASSET_PARTITION_LABEL,
+        .max_files = 4,
+        .format_if_mount_failed = false,
+    };
+
+    esp_err_t err = esp_vfs_spiffs_register(&conf);
+    if (err == ESP_ERR_INVALID_STATE) {
+        return ESP_OK;
+    }
+    ESP_RETURN_ON_ERROR(err, TAG, "mount diagnostic web assets");
+
+    size_t total = 0;
+    size_t used = 0;
+    err = esp_spiffs_info(DIAG_ASSET_PARTITION_LABEL, &total, &used);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Diagnostic web assets mounted from SPIFFS: %zu/%zu bytes used", used, total);
+    } else {
+        ESP_LOGW(TAG, "Diagnostic web assets mounted, but SPIFFS usage is unavailable: %s", esp_err_to_name(err));
+    }
+
+    return ESP_OK;
+}
+
+static const char *asset_path_for_uri(const char *uri)
+{
+    if (strcmp(uri, "/") == 0 || strcmp(uri, "/index.html") == 0) {
+        return DIAG_ASSET_BASE_PATH "/index.html";
+    }
+    if (strcmp(uri, "/style.css") == 0) {
+        return DIAG_ASSET_BASE_PATH "/style.css";
+    }
+    if (strcmp(uri, "/app.js") == 0) {
+        return DIAG_ASSET_BASE_PATH "/app.js";
+    }
+    return NULL;
+}
+
+static const char *content_type_for_uri(const char *uri)
+{
+    if (strcmp(uri, "/") == 0 || strcmp(uri, "/index.html") == 0) {
+        return "text/html; charset=utf-8";
+    }
+    if (strcmp(uri, "/style.css") == 0) {
+        return "text/css; charset=utf-8";
+    }
+    if (strcmp(uri, "/app.js") == 0) {
+        return "application/javascript; charset=utf-8";
+    }
+    return "application/octet-stream";
+}
+
+static esp_err_t static_asset_handler(httpd_req_t *req)
+{
+    const char *path = asset_path_for_uri(req->uri);
+    if (path == NULL) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+    }
+
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        ESP_LOGW(TAG, "Diagnostic web asset not found: %s", path);
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+    }
+
+    httpd_resp_set_type(req, content_type_for_uri(req->uri));
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+
+    char buffer[DIAG_ASSET_CHUNK_SIZE];
+    esp_err_t err = ESP_OK;
+    size_t read_bytes = 0;
+    while ((read_bytes = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        err = httpd_resp_send_chunk(req, buffer, read_bytes);
+        if (err != ESP_OK) {
+            break;
+        }
+    }
+
+    fclose(file);
+
+    if (err == ESP_OK) {
+        err = httpd_resp_send_chunk(req, NULL, 0);
+    }
+    return err;
 }
 
 static void mac_to_string(const uint8_t mac[ESP_NOW_ETH_ALEN], char out[18])
@@ -178,8 +242,10 @@ esp_err_t diagnostics_web_start_http(void)
         return ESP_OK;
     }
 
+    ESP_RETURN_ON_ERROR(diagnostics_web_mount_assets(), TAG, "mount diagnostic web assets");
+
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 2;
+    config.max_uri_handlers = 5;
     config.max_open_sockets = 3;
     config.lru_purge_enable = true;
     config.stack_size = 4096;
@@ -187,9 +253,15 @@ esp_err_t diagnostics_web_start_http(void)
 
     ESP_RETURN_ON_ERROR(httpd_start(&s_http_server, &config), TAG, "start diagnostic HTTP server");
 
-    const httpd_uri_t index_uri = {.uri = "/", .method = HTTP_GET, .handler = index_handler};
+    const httpd_uri_t root_uri = {.uri = "/", .method = HTTP_GET, .handler = static_asset_handler};
+    const httpd_uri_t index_uri = {.uri = "/index.html", .method = HTTP_GET, .handler = static_asset_handler};
+    const httpd_uri_t style_uri = {.uri = "/style.css", .method = HTTP_GET, .handler = static_asset_handler};
+    const httpd_uri_t app_uri = {.uri = "/app.js", .method = HTTP_GET, .handler = static_asset_handler};
     const httpd_uri_t status_uri = {.uri = "/api/status", .method = HTTP_GET, .handler = status_handler};
+    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_http_server, &root_uri), TAG, "register diagnostic root handler");
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_http_server, &index_uri), TAG, "register diagnostic index handler");
+    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_http_server, &style_uri), TAG, "register diagnostic style handler");
+    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_http_server, &app_uri), TAG, "register diagnostic app handler");
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_http_server, &status_uri), TAG, "register diagnostic status handler");
     ESP_LOGI(TAG, "Diagnostic web interface ready at http://%s/", CONFIG_BRIDGE_DIAGNOSTICS_AP_IP);
     return ESP_OK;
