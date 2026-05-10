@@ -42,6 +42,24 @@ Recommended options:
 - Disable debug telemetry logs on payload interfaces.
 - Prefer hardware UART over USB Serial/JTAG CDC for NMEA payloads, because USB CDC may share the same stream with logs/monitor traffic.
 
+## Optional diagnostic web interface
+
+An optional read-only diagnostic web page can be enabled in `idf.py menuconfig` under **ESP-NOW Serial Bridge → Enable diagnostic web interface**.
+
+When enabled, the board starts a WPA3-only SoftAP alongside ESP-NOW. Configure the SoftAP SSID, passphrase, and gateway IP in the same menu. Open:
+
+```text
+http://<configured-ap-ip>/
+```
+
+The page is read-only and build-time configured only. It exposes bridge status such as uptime, STA/peer MACs, channel, ESP-NOW RX/send counters, and UART-to-ESP-NOW drop counters. The JSON endpoint is available at `/api/status`.
+
+Notes:
+
+- WPA3 SoftAP/SAE support is required.
+- The SoftAP uses the same channel as ESP-NOW (`CONFIG_BRIDGE_WIFI_CHANNEL`).
+- The AP netmask is fixed to `/24`; DHCP leases are derived automatically from the configured AP IP.
+
 ## Optional ESP-NOW encryption
 
 ESP-NOW encryption is disabled by default. Enable **ESP-NOW Serial Bridge → Enable ESP-NOW encryption** in menuconfig on both boards.

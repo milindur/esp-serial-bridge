@@ -31,6 +31,8 @@
 #include "nvs_flash.h"
 #include "sdkconfig.h"
 
+#include "diagnostics_web.h"
+
 #define BRIDGE_PACKET_SIZE ESP_NOW_MAX_DATA_LEN
 #define UART_RX_BUFFER_SIZE 2048
 #define UART_TX_BUFFER_SIZE 2048
@@ -370,13 +372,18 @@ static esp_err_t init_wifi(void)
 {
     ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "init netif");
     ESP_RETURN_ON_ERROR(esp_event_loop_create_default(), TAG, "create event loop");
+#if CONFIG_BRIDGE_DIAGNOSTICS_WEB
+    ESP_RETURN_ON_ERROR(diagnostics_web_init_netif(), TAG, "create diagnostic SoftAP netif");
+#endif
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_RETURN_ON_ERROR(esp_wifi_init(&cfg), TAG, "init wifi");
     ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "set wifi storage");
+#if CONFIG_BRIDGE_DIAGNOSTICS_WEB
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_APSTA), TAG, "set wifi mode");
+#else
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "set wifi mode");
-    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start wifi");
-    ESP_RETURN_ON_ERROR(esp_wifi_set_ps(WIFI_PS_NONE), TAG, "disable wifi sleep");
+#endif
 
     wifi_country_t country = {
         .cc = CONFIG_BRIDGE_WIFI_COUNTRY,
@@ -386,6 +393,11 @@ static esp_err_t init_wifi(void)
         .policy = WIFI_COUNTRY_POLICY_MANUAL,
     };
     ESP_RETURN_ON_ERROR(esp_wifi_set_country(&country), TAG, "set wifi country");
+#if CONFIG_BRIDGE_DIAGNOSTICS_WEB
+    ESP_RETURN_ON_ERROR(diagnostics_web_configure_softap(), TAG, "configure diagnostic SoftAP");
+#endif
+    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start wifi");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_ps(WIFI_PS_NONE), TAG, "disable wifi sleep");
     ESP_RETURN_ON_ERROR(esp_wifi_set_max_tx_power(CONFIG_BRIDGE_WIFI_MAX_TX_POWER), TAG, "set wifi tx power");
     ESP_RETURN_ON_ERROR(esp_wifi_set_channel(CONFIG_BRIDGE_WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE), TAG,
                         "set wifi channel");
@@ -601,6 +613,27 @@ static void telemetry_task(void *arg)
 }
 #endif
 
+void bridge_get_status(bridge_status_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->uptime_ms = (uint64_t)now_ms();
+    (void)esp_wifi_get_mac(WIFI_IF_STA, out->own_mac);
+    memcpy(out->peer_mac, s_peer_addr, sizeof(out->peer_mac));
+    out->channel = CONFIG_BRIDGE_WIFI_CHANNEL;
+    out->tx_dropped_packets = atomic_load(&s_tx_dropped_packets);
+    out->tx_dropped_bytes = atomic_load(&s_tx_dropped_bytes);
+    out->rx_dropped_bytes = atomic_load(&s_rx_dropped);
+    out->rx_received_packets = atomic_load(&s_rx_received_packets);
+    out->rx_received_bytes = atomic_load(&s_rx_received_bytes);
+    out->rx_truncated_bytes = atomic_load(&s_rx_truncated_bytes);
+    out->send_success_count = atomic_load(&s_send_success_count);
+    out->send_fail_count = atomic_load(&s_send_fail_count);
+}
+
 static esp_err_t start_bridge_tasks(void)
 {
     BaseType_t ok = xTaskCreate(uart_packetizer_task, "uart_packetizer", 4096, NULL, 10, NULL);
@@ -640,6 +673,9 @@ void app_main(void)
     ESP_ERROR_CHECK(init_bridge_io());
     ESP_ERROR_CHECK(init_wifi());
     ESP_ERROR_CHECK(init_espnow());
+#if CONFIG_BRIDGE_DIAGNOSTICS_WEB
+    ESP_ERROR_CHECK(diagnostics_web_start_http());
+#endif
 
     uint8_t own_mac[ESP_NOW_ETH_ALEN] = {0};
     ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_STA, own_mac));

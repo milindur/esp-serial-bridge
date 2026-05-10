@@ -149,6 +149,42 @@ config BRIDGE_DEBUG_TELEMETRY_INTERVAL_MS
     default 1000
     depends on BRIDGE_DEBUG
 
+config BRIDGE_DIAGNOSTICS_WEB
+    bool "Enable diagnostic web interface"
+    depends on ESP_WIFI_ENABLE_WPA3_SAE && ESP_WIFI_SOFTAP_SAE_SUPPORT
+    default n
+    help
+        Enable a read-only diagnostic HTTP page over a WPA3-only SoftAP.
+        The SoftAP always uses CONFIG_BRIDGE_WIFI_CHANNEL, shared with ESP-NOW.
+        HTTP listens on port 80 and exposes / plus /api/status.
+        The netmask is fixed to /24 and the DHCP lease range is derived from
+        the configured AP IP address automatically.
+
+config BRIDGE_DIAGNOSTICS_AP_SSID
+    string "Diagnostic SoftAP SSID"
+    depends on BRIDGE_DIAGNOSTICS_WEB
+    default "ESP-Serial-Bridge-Diag"
+    help
+        SSID for the WPA3-only diagnostic SoftAP.
+
+config BRIDGE_DIAGNOSTICS_AP_PASSWORD
+    string "Diagnostic SoftAP WPA3 passphrase"
+    depends on BRIDGE_DIAGNOSTICS_WEB
+    default "change-me-diag"
+    help
+        WPA3 SoftAP passphrase. Must be 8 to 63 characters.
+        This is the only access boundary in v1; the HTTP UI has no separate
+        authentication.
+
+config BRIDGE_DIAGNOSTICS_AP_IP
+    string "Diagnostic SoftAP IP address"
+    depends on BRIDGE_DIAGNOSTICS_WEB
+    default "192.168.4.1"
+    help
+        Gateway IP address for the diagnostic SoftAP. The netmask is fixed to
+        255.255.255.0. DHCP leases are derived in the same /24, normally .2 to
+        .20 unless that would conflict with this gateway address.
+
 config BRIDGE_ESPNOW_ENCRYPTION
     bool "Enable ESP-NOW encryption"
     default n
