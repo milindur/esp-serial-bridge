@@ -16,6 +16,23 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 If `idf.py` is not available, repair/install the ESP-IDF Python environment for v6.0.1 before building.
 
+### Waveshare ESP32-C6-Dev-Kit-N8 / 8 MB OTA layout
+
+For the Waveshare ESP32-C6-Dev-Kit-N8, use the dedicated 8 MB OTA profile. It uses `partitions_8mb_ota.csv` with two large OTA app slots so a future web updater can write firmware directly to the inactive slot.
+
+Use a separate build directory and sdkconfig file for this board:
+
+```sh
+source ~/.espressif/tools/activate_idf_v6.0.1.sh
+idf.py -B build-c6-n8 \
+    -DSDKCONFIG=sdkconfig.esp32c6_n8 \
+    -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32c6_8mb_ota" \
+    set-target esp32c6 reconfigure build
+idf.py -B build-c6-n8 -p /dev/ttyACM0 flash monitor
+```
+
+If an existing generated `sdkconfig` keeps old 2 MB flash or single-app partition settings, create a fresh `SDKCONFIG` file as shown above or rerun `reconfigure`/`menuconfig` after changing defaults.
+
 ## Configuration
 
 Run `idf.py menuconfig` and open **ESP-NOW Serial Bridge**.

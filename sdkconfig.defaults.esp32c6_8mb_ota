@@ -1,0 +1,6 @@
+# Waveshare ESP32-C6-Dev-Kit-N8 profile: 8 MB flash with OTA-ready partitioning.
+CONFIG_IDF_TARGET="esp32c6"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_8mb_ota.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_8mb_ota.csv"
