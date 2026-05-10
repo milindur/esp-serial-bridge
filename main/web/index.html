@@ -3,17 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>ESP Serial Bridge Diagnostics</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main>
-    <h1>ESP Serial Bridge Diagnostics</h1>
-    <div class="card">
-      <dl id="status"></dl>
-      <p id="state">Loading...</p>
-    </div>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">ESP-NOW / UART bridge</p>
+        <h1>Diagnostics</h1>
+      </div>
+      <div id="health" class="health health--loading" aria-live="polite">
+        <span class="health-dot"></span>
+        Loading
+      </div>
+    </header>
+
+    <section class="panel panel--overview" aria-labelledby="overview-title">
+      <div>
+        <p class="eyebrow">Runtime</p>
+        <h2 id="uptime">--</h2>
+      </div>
+      <div class="meta-grid" aria-labelledby="overview-title">
+        <h2 id="overview-title" class="sr-only">Bridge overview</h2>
+        <div><span>Channel</span><strong id="channel">--</strong></div>
+        <div><span>Last update</span><strong id="updated">--</strong></div>
+      </div>
+    </section>
+
+    <section class="grid" aria-label="Diagnostic metrics">
+      <article class="panel">
+        <h2>Radio</h2>
+        <dl id="radio"></dl>
+      </article>
+      <article class="panel">
+        <h2>Traffic</h2>
+        <dl id="traffic"></dl>
+      </article>
+      <article class="panel panel--wide">
+        <h2>Errors & drops</h2>
+        <dl id="errors"></dl>
+      </article>
+    </section>
   </main>
+
   <script src="/app.js"></script>
 </body>
 </html>
